@@ -1,182 +1,492 @@
-package com.open.spring.hacks.classDataStruct;
+package com.open.spring.mvc.person;
 
-import java.text.SimpleDateFormat;
-import java.time.LocalDate;
-import java.time.Period;
-import java.time.ZoneId;
-import java.util.Date;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.PrimaryKeyJoinColumn;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
+import jakarta.persistence.CascadeType;
+
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.open.spring.mvc.assignments.AssignmentSubmission;
+import com.open.spring.mvc.bank.Bank;
+import com.open.spring.mvc.bathroom.Tinkle;
+import com.open.spring.mvc.groups.Groups;
+import com.open.spring.mvc.groups.Submitter;
+import com.open.spring.mvc.synergy.SynergyGrade;
+import com.open.spring.mvc.trains.TrainCompany;
+import com.open.spring.mvc.userStocks.userStocksTable;
+
+import io.github.cdimascio.dotenv.Dotenv;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.NonNull;
 
 
-/*
-Adapted from Person POJO, Plain Old Java Object.
+/**
+ * Person is a POJO, Plain Old Java Object.
+ * --- @Data is Lombox annotation
+ * for @Getter @Setter @ToString @EqualsAndHashCode @RequiredArgsConstructor
+ * --- @AllArgsConstructor is Lombox annotation for a constructor with all
+ * arguments
+ * --- @NoArgsConstructor is Lombox annotation for a constructor with no
+ * arguments
+ * --- @Entity annotation is used to mark the class as a persistent Java class.
  */
-public class Person extends Generics{
-    // Class data
-    private static String classType = "Person";
-    public static KeyTypes key = KeyType.title;  // static initializer
-	public static void setOrder(KeyTypes key) {Person.key = key;}
-	public enum KeyType implements KeyTypes {title, uid, name, dob, age}
+@Data
+@EqualsAndHashCode(callSuper = true)
+@AllArgsConstructor
+@NoArgsConstructor
+@Entity
+@JsonIgnoreProperties({"submissions", "groups"})
+public class Person extends Submitter implements Comparable<Person> {
 
-    // Instance data
-    private String uid;  // user / person id
+//////////////////////////////////////////////////////////////////////////////////
+/// Columns stored on Person
+    /** Automatic unique identifier for Person or group record 
+     * --- Id annotation is used to specify the identifier property of the entity.
+     * ----GeneratedValue annotation is used to specify the primary key generation
+     * strategy to use.
+     * ----- The strategy is to have the persistence provider pick an appropriate
+     * strategy for the particular database.
+     * ----- GenerationType.AUTO is the default generation type and it will pick the
+     * strategy based on the used database.
+     */
+    // @Id
+    // @GeneratedValue(strategy = GenerationType.AUTO)
+    // private Long id;
+
+    /**
+     * email, password, roles are key attributes to login and authentication
+     * --- @NotEmpty annotation is used to validate that the annotated field is not
+     * null or empty, meaning it has to have a value.
+     * --- @Size annotation is used to validate that the annotated field is between
+     * the specified boundaries, in this case greater than 5.
+     * --- @Email annotation is used to validate that the annotated field is a valid
+     * email address.
+     * --- @Column annotation is used to specify the mapped column for a persistent
+     * property or field, in this case unique and email.
+     */
+
+    @NotEmpty
     private String password;
+
+    @NotEmpty
+    @Size(min = 1)
+    @Column(unique = true, nullable = false)
+    @Email
+    private String email;
+
+
+    @Column(unique = true, nullable = false)
+    private String uid; // New `uid` column added
+
+    /**
+     * name, pfp attributes to describe the person
+     * --- @NonNull annotation is used to generate a constructor witha
+     * AllArgsConstructor Lombox annotation.
+     * --- @Size annotation is used to validate that the annotated field is between
+     * the specified boundaries, in this case between 2 and 30 characters.
+     * --- @DateTimeFormat annotation is used to declare a field as a date, in this
+     * case the pattern is specified as yyyy-MM-dd.
+     */
+    @NonNull
+    @Size(min = 2, max = 30, message = "Name (2 to 30 chars)")
     private String name;
-    private Date dob;
+
+
+
+
+    /** Profile picture (pfp) in base64 */
+    @Column(length = 255, nullable = true)
+    private String pfp;
+
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private Boolean kasmServerNeeded = false;
+
+    @Column(nullable=true)
+    private String sid;
+
+    /**
+     * stats is used to store JSON for daily stats
+     * --- @JdbcTypeCode annotation is used to specify the JDBC type code for a
+     * column, in this case json.
+     * --- @Column annotation is used to specify the mapped column for a persistent
+     * property or field, in this case columnDefinition is specified as jsonb.
+     * * * Example of JSON data:
+     * "stats": {
+     * "2022-11-13": {
+     * "calories": 2200,
+     * "steps": 8000
+     * }
+     * }
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, Map<String, Object>> stats = new HashMap<>();
+
+
+//////////////////////////////////////////////////////////////////////////////////
+/// Relationships
+
+
+    @OneToMany(mappedBy="student", cascade=CascadeType.ALL, orphanRemoval=true)
+    @JsonIgnore
+    private List<SynergyGrade> grades;
     
+ 
 
-    // Constructor with zero arguments
-    public Person() {
-        super.setType(classType);
-    }
+    /**
+     * Many to Many relationship with PersonRole
+     * --- @ManyToMany annotation is used to specify a many-to-many relationship
+     * between the entities.
+     * --- FetchType.EAGER is used to specify that data must be eagerly fetched,
+     * meaning that it must be loaded immediately.
+     * --- Collection is a root interface in the Java Collection Framework, in this
+     * case it is used to store PersonRole objects.
+     * --- ArrayList is a resizable array implementation of the List interface,
+     * allowing all elements to be accessed using an integer index.
+     * --- PersonRole is a POJO, Plain Old Java Object.
+     */
+    @ManyToMany(fetch = FetchType.EAGER)
+    private Collection<PersonRole> roles = new ArrayList<>();
 
-    // Constructor used when building object from an API
-    public Person(String uid, String password, String name, Date dob) {
-        this();  // runs zero argument constructor
+
+    @OneToOne(mappedBy = "person", cascade=CascadeType.ALL)
+    @JsonIgnore
+    private Tinkle timeEntries;
+
+    @OneToOne(cascade = CascadeType.ALL, mappedBy = "person")
+    private Bank banks;
+
+
+    @OneToOne(cascade = CascadeType.ALL, mappedBy = "person")
+    @JsonIgnore
+    private userStocksTable user_stocks;
+
+
+    @ManyToMany(mappedBy = "groupMembers")
+    @JsonBackReference
+    @JsonIgnore
+    private List<Groups> groups = new ArrayList<>();
+
+    @OneToOne(mappedBy = "owner",  cascade = CascadeType.ALL)
+    @PrimaryKeyJoinColumn
+    @JsonIgnore
+    private TrainCompany company;
+
+//////////////////////////////////////////////////////////////////////////////////
+/// Constructors
+
+
+    /** Custom constructor for Person when building a new Person object from an API call
+     * @param email, a String
+     * @param password, a String
+     * @param name, a String
+     * @param dob, a Date
+     */
+    public Person(String email, String uid, String password, String sid, String name, String pfp, Boolean kasmServerNeeded, PersonRole role) {
+        this.email = email;
         this.uid = uid;
         this.password = password;
+        this.sid = sid;
         this.name = name;
-        this.dob = dob;
+        this.kasmServerNeeded = kasmServerNeeded;
+        this.pfp = pfp;
+        this.roles.add(role);
+
+        this.timeEntries = new Tinkle(this, "");        
+        // Create a Bank for this person
+        this.banks = new Bank(this);
     }
 
-    /* 'Generics' requires getKey to help enforce KeyTypes usage */
-	@Override
-	protected KeyTypes getKey() { return Person.key; }
 
-    public String getUserID() {
-        return uid;
+    /** 1st telescoping method to create a Person object with USER role
+     * @param name
+     * @param email
+     * @param password
+     * @param dob
+     * @return Person
+     */
+    public static Person createPerson(String name, String email, String uid, String password, String sid, Boolean kasmServerNeeded, List<String> asList) {
+        // By default, Spring Security expects roles to have a "ROLE_" prefix.
+        return createPerson(name, email, uid, password, sid, kasmServerNeeded, Arrays.asList("ROLE_USER", "ROLE_STUDENT"));
     }
 
-    /* 'Generics' requires toString override
-	 * toString provides data based off of Static Key setting
-	 */
-	@Override
-	public String toString() {		
-		String output="";
-		if (KeyType.uid.equals(this.getKey())) {
-			output += this.uid;
-		} else if (KeyType.name.equals(this.getKey())) {
-			output += this.name;
-		} else if (KeyType.age.equals(this.getKey())) {
-			output += "0000" + this.getAge();  // pads integer 1,100,11,2 to 0001,0100,0011,0002
-			output = output.substring(output.length() - 4);
-		} else {
-			output = super.getType() + ": " + this.uid + ", " + this.name + ", " + this.getAge();
-		}
-		return output;
-	}
 
-    public void setUid(String uid) {
-        this.uid = uid;
+    /**
+     * 2nd telescoping method to create a Person object with parameterized roles
+     * 
+     * @param roles
+     */
+    public static Person createPerson(String name, String uid,  String email, String password, String sid,  String pfp, Boolean kasmServerNeeded, List<String> roleNames) {
+        Person person = new Person();
+        person.setName(name);
+        person.setUid(uid);
+        person.setEmail(email);
+        person.setPassword(password);
+        person.setSid(sid);
+        person.setKasmServerNeeded(kasmServerNeeded);
+        person.setPfp(pfp);
+        List<PersonRole> roles = new ArrayList<>();
+        for (String roleName : roleNames) {
+            PersonRole role = new PersonRole(roleName);
+            roles.add(role);
+        }
+        person.setRoles(roles);
+        person.setBanks(new Bank(person));
+
+        return person;
     }
 
-    public String getPassword() {
-        return password;
+
+//////////////////////////////////////////////////////////////////////////////////
+/// getter methods
+
+
+    /** Custom getter to return age from dob attribute
+     * @return int, the age of the person
+    */
+
+
+
+//////////////////////////////////////////////////////////////////////////////////
+    // other methods  
+    
+    /** Custom hasRoleWithName method to find if a role exists on user
+     * @param roleName, a String with the name of the role
+     * @return boolean, the result of the search
+     */
+    public boolean hasRoleWithName(String roleName) {
+        for (PersonRole role : roles) {
+            if (role.getName().equals(roleName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    public void setPassword(String password) {
-        this.password = password;
+
+    /** Custom compareTo method to compare Person objects by name
+     * @param other, a Person object
+     * @return int, the result of the comparison
+     */
+    @Override
+    public int compareTo(Person other) {
+        return this.name.compareTo(other.name);
     }
 
-    public String getName() {
-        return name;
-    }
 
-    public void setName(String name) {
-        this.name = name;
-    }
+//////////////////////////////////////////////////////////////////////////////////
+/// initalization method
 
-    public Date getDob() {
-        return dob;
-    }
 
-    public void setDob(Date dob) {
-        this.dob = dob;
-    }
-
-    // A custom getter to return age from dob attribute
-    public int getAge() {
-        if (this.dob != null) {
-            LocalDate birthDay = this.dob.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-            return Period.between(birthDay, LocalDate.now()).getYears(); }
-        return -1;
-    }
-
-    // Initialize static test data 
+    /**
+     * Static method to initialize an array list of Person objects
+     * Uses createPerson method to create Person objects
+     * Sorts the list of Person objects using Collections.sort which uses the compareTo method 
+     * @return Person[], an array of Person objects
+     */
     public static Person[] init() {
-
-        // basics of class construction
-        Person p1 = new Person();
-        p1.setName("Thomas Edison");
-        p1.setUid("toby@gmail.com");
-        p1.setPassword("123Toby!");
-        // adding Note to notes collection
-        try {  // All data that converts formats could fail
-            Date d = new SimpleDateFormat("MM-dd-yyyy").parse("01-01-1840");
-            p1.setDob(d);
-        } catch (Exception e) {
-            // no actions as dob default is good enough
-        }
-
-        Person p2 = new Person();
-        p2.setName("Alexander Graham Bell");
-        p2.setUid("lexb@gmail.com");
-        p2.setPassword("123LexB!");
-        try {
-            Date d = new SimpleDateFormat("MM-dd-yyyy").parse("01-01-1845");
-            p2.setDob(d);
-        } catch (Exception e) {
-        }
-
-        Person p3 = new Person();
-        p3.setName("Nikola Tesla");
-        p3.setUid("niko@gmail.com");
-        p3.setPassword("123Niko!");
-        try {
-            Date d = new SimpleDateFormat("MM-dd-yyyy").parse("01-01-1850");
-            p3.setDob(d);
-        } catch (Exception e) {
-        }
-
-        Person p4 = null;
-        Person p5 = null;
-        Person p6 = null;
-        try {
-            p4 = new Person(
-                "madam@gmail.com",
-                "123Madam!",
-                "Madam Currie", 
-                new SimpleDateFormat("MM-dd-yyyy").parse("01-01-2023")
-            );
+        ArrayList<Person> people = new ArrayList<>();
+        final Dotenv dotenv = Dotenv.load();
+        final String adminPassword = dotenv.get("ADMIN_PASSWORD");
+        final String defaultPassword = dotenv.get("DEFAULT_PASSWORD");
     
-            p5 = new Person(
-                "jm1021@gmail.com", 
-                "123Qwerty!",
-                "John Mortensen",
-                new SimpleDateFormat("MM-dd-yyyy").parse("10-21-1959")
+        // JSON-like list of person data using Map.ofEntries
+        List<Map<String, Object>> personData = Arrays.asList(
+            Map.ofEntries(
+                Map.entry("name", "Thomas Edison"),
+                Map.entry("uid", "toby"),
+                Map.entry("email", "toby@gmail.com"),
+                Map.entry("password", adminPassword),
+                Map.entry("sid", "1"),
+                Map.entry("pfp", "/images/toby.png"),
+                Map.entry("kasmServerNeeded", true),
+                Map.entry("roles", Arrays.asList("ROLE_ADMIN", "ROLE_USER", "ROLE_TESTER", "ROLE_TEACHER")),
+                Map.entry("stocks", "BTC,ETH")
+            ),
+            Map.ofEntries(
+                Map.entry("name", "Alexander Graham Bell"),
+                Map.entry("uid", "lex"),
+                Map.entry("email", "lexb@gmail.com"),
+                Map.entry("password", defaultPassword),
+                Map.entry("sid", "1"),
+                Map.entry("pfp", "/images/lex.png"),
+                Map.entry("kasmServerNeeded", true),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
+                Map.entry("stocks", "BTC,ETH")
+            ),
+            Map.ofEntries(
+                Map.entry("name", "Nikola Tesla"),
+                Map.entry("uid", "niko"),
+                Map.entry("email", "niko@gmail.com"),
+                Map.entry("password", defaultPassword),
+                Map.entry("sid", "1"),
+                Map.entry("pfp", "/images/niko.png"),
+                Map.entry("kasmServerNeeded", true),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
+                Map.entry("stocks", "BTC,ETH")
+            ),
+            Map.ofEntries(
+                Map.entry("name", "Madam Curie"),
+                Map.entry("uid", "madam"),
+                Map.entry("email", "madam@gmail.com"),
+                Map.entry("password", defaultPassword),
+                Map.entry("sid", "1"),
+                Map.entry("pfp", "/images/madam.png"),
+                Map.entry("kasmServerNeeded", true),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
+                Map.entry("stocks", "BTC,ETH")
+            ),
+            Map.ofEntries(
+                Map.entry("name", "Grace Hopper"),
+                Map.entry("uid", "hop"),
+                Map.entry("email", "hop@gmail.com"),
+                Map.entry("password", defaultPassword),
+                Map.entry("sid", "123"),
+                Map.entry("pfp", "/images/hop.png"),
+                Map.entry("kasmServerNeeded", true),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
+                Map.entry("stocks", "BTC,ETH")
+            ),
+            Map.ofEntries(
+                Map.entry("name", "John Mortensen"),
+                Map.entry("uid", "jm1021"),
+                Map.entry("email", "jmort1021@gmail.com"),
+                Map.entry("password", defaultPassword),
+                Map.entry("sid", "1"),
+                Map.entry("pfp", "/images/jm1021.png"),
+                Map.entry("kasmServerNeeded", true),
+                Map.entry("roles", Arrays.asList("ROLE_ADMIN", "ROLE_TEACHER")),
+                Map.entry("stocks", "BTC,ETH")
+            ),
+            Map.ofEntries(
+                Map.entry("name", "Alan Turing"),
+                Map.entry("uid", "alan"),
+                Map.entry("email", "turing@gmail.com"),
+                Map.entry("password", defaultPassword),
+                Map.entry("sid", "2"),
+                Map.entry("pfp", "/images/alan.png"),
+                Map.entry("kasmServerNeeded", false),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_TESTER", "ROLE_STUDENT")),
+                Map.entry("stocks", "BTC,ETH")
+            )
+        );
+    
+        // Iterate over the JSON-like list to create Person objects
+        for (Map<String, Object> data : personData) {
+            Person person = createPerson(
+                (String) data.get("name"),
+                (String) data.get("uid"),
+                (String) data.get("email"),
+                (String) data.get("password"),
+                (String) data.get("sid"),
+                (String) data.get("pfp"),
+                (Boolean) data.get("kasmServerNeeded"),
+                (List<String>) data.get("roles")
             );
-            p6 = new Person(
-                "tarasehdave@gmail.com", 
-                "123tara",
-                "Tara Sehdave",
-                new SimpleDateFormat("MM-dd-yyyy").parse("12-21-2006")
+            
+            
+            // Create userStocksTable and set the one-to-one relationship
+            userStocksTable stock = new userStocksTable(
+                null,
+                (String) data.get("stocks"),
+                person.getEmail(),
+                person,
+                false,
+                true,
+                ""
             );
-        } catch (Exception e) {
+            stock.setPerson(person); // Set the one-to-one relationship
+            person.setUser_stocks(stock);
+    
+            people.add(person);
         }
-
-        // Array definition and data initialization
-        Person persons[] = {p1, p2, p3, p4, p5, p6};
-        return(persons);
+    
+        // Sort the list of people
+        Collections.sort(people);
+    
+        return people.toArray(new Person[0]);
     }
 
+
+//////////////////////////////////////////////////////////////////////////////////
+/// override toString() method
+
+
+    @Override
+    public String toString(){
+        String output = "person : {";
+        output += "\"id\":"+ String.valueOf(this.getId())+","; //id
+        output += "\"uid\":\""+ String.valueOf(this.getUid())+"\","; //user id (github/email)
+        output += "\"email\":\""+ String.valueOf(this.getEmail())+"\","; //email
+        output += "\"password\":\""+ String.valueOf(this.getPassword())+"\","; //password
+        output += "\"name\":\""+ String.valueOf(this.getName())+"\","; // name
+        output += "\"sid\":\""+ String.valueOf(this.getSid())+"\","; // student id
+        output += "\"kasmServerNeeded\":\""+ String.valueOf(this.getKasmServerNeeded())+"\","; // kasm server needed
+        output += "\"stats\":"+ String.valueOf(this.getStats())+","; //stats (I think this is unused)
+        output += "}";
+
+        return output;
+    }
+
+
+//////////////////////////////////////////////////////////////////////////////////
+/// public static void main(String[] args){}
+
+
+    /**
+     * Static method to print Person objects from an array
+     * 
+     * @param args, not used
+     */
     public static void main(String[] args) {
         // obtain Person from initializer
-        Person persons[] = init();
-        Person.setOrder(Person.KeyType.title);
+        Person[] persons = init();
 
         // iterate using "enhanced for loop"
-        for( Person person : persons ) {
+        for (Person person : persons) {
             System.out.println(person);  // print object
+            System.out.println();
         }
     }
 
+    @JsonIgnore
+    public List<Groups> getGroups() {
+        return groups;
+    }
+
+    public static List<AssignmentSubmission> getAllSubmissions(Person person) {
+        // gets all the individual submissions and also the group submissions
+        List<AssignmentSubmission> all = new ArrayList<>(person.getSubmissions());
+        for (Groups group : person.getGroups()) {
+            all.addAll(group.getSubmissions());
+        }
+        return all;
+    }
 }
